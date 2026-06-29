@@ -24,6 +24,8 @@ interface AddressAutocompleteProps {
     bedrooms: number;
     bathrooms: number;
     year_built: number;
+    lot_size_sqft?: number;
+    property_type?: string;
   }) => void;
   placeholder?: string;
   style?: any;

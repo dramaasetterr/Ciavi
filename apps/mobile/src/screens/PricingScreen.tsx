@@ -297,13 +297,13 @@ export default function PricingScreen() {
 
           <Text style={styles.title}>Price Your Home</Text>
           <Text style={styles.subtitle}>
-            Claude Opus 4.7 acts as your elite appraiser — the more detail you share, the sharper the price.
+            Our AI acts as your elite appraiser — the more detail you share, the sharper the price.
           </Text>
 
           <View style={styles.infoCard}>
             <Text style={styles.infoIcon}>{"\u{1F4A1}"}</Text>
             <Text style={styles.infoText}>
-              Start with the address and fill in every section you can. Photos help Claude judge quality, finish, and curb appeal — especially for luxury homes.
+              Start with the address and fill in every section you can. Photos help our AI judge quality, finish, and curb appeal — especially for luxury homes.
             </Text>
           </View>
 
@@ -330,6 +330,10 @@ export default function PricingScreen() {
                 if (data.bedrooms && !bedrooms) setBedrooms(String(data.bedrooms));
                 if (data.bathrooms && !bathrooms) setBathrooms(String(data.bathrooms));
                 if (data.year_built && !yearBuilt) setYearBuilt(String(data.year_built));
+                if (data.lot_size_sqft && !lotSize) setLotSize(String(data.lot_size_sqft));
+                if (data.property_type && PROPERTY_TYPES.includes(data.property_type as any)) {
+                  setPropertyType(data.property_type as (typeof PROPERTY_TYPES)[number]);
+                }
               }}
             />
 
@@ -354,7 +358,7 @@ export default function PricingScreen() {
               ))}
             </View>
 
-            <Text style={styles.label}>Above-Grade Square Footage</Text>
+            <Text style={styles.label}>Above-Ground Square Footage (excludes basement)</Text>
             <View style={styles.inputWrapper}>
               <TextInput
                 style={styles.input}
@@ -621,7 +625,7 @@ export default function PricingScreen() {
           <Text style={styles.sectionHeader}>Photos (for vision analysis)</Text>
           <View style={styles.formSection}>
             <Text style={styles.helperText}>
-              Upload up to {MAX_PRICING_PHOTOS} photos. Claude will examine them to judge quality and curb appeal.
+              Upload up to {MAX_PRICING_PHOTOS} photos. Our AI will examine them to judge quality and curb appeal.
             </Text>
             {photos.length > 0 && (
               <View style={styles.photoGrid}>

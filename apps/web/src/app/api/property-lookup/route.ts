@@ -10,25 +10,100 @@ if (!process.env.ANTHROPIC_API_KEY) {
 
 const anthropic = new Anthropic();
 
-export async function POST(request: NextRequest) {
+type PropertyLookupResult = {
+  sqft: number;
+  bedrooms: number;
+  bathrooms: number;
+  year_built: number;
+  lot_size_sqft?: number;
+  property_type?: "single_family" | "condo" | "townhouse" | "multi_family";
+};
+
+const FALLBACK: PropertyLookupResult = {
+  sqft: 1800,
+  bedrooms: 3,
+  bathrooms: 2,
+  year_built: 1995,
+};
+
+function mapRentCastPropertyType(t: unknown): PropertyLookupResult["property_type"] {
+  if (typeof t !== "string") return undefined;
+  const s = t.toLowerCase();
+  if (s.includes("single")) return "single_family";
+  if (s.includes("condo")) return "condo";
+  if (s.includes("town")) return "townhouse";
+  if (s.includes("multi") || s.includes("duplex") || s.includes("triplex")) return "multi_family";
+  return undefined;
+}
+
+function sanitize(r: Partial<PropertyLookupResult>): PropertyLookupResult | null {
+  const sqft = Math.round(Number(r.sqft));
+  const bedrooms = Math.round(Number(r.bedrooms));
+  const bathrooms = Number(r.bathrooms);
+  const year_built = Math.round(Number(r.year_built));
+
+  if (
+    !Number.isFinite(sqft) || sqft < 200 || sqft > 20000 ||
+    !Number.isFinite(bedrooms) || bedrooms < 0 || bedrooms > 20 ||
+    !Number.isFinite(bathrooms) || bathrooms < 0 || bathrooms > 20 ||
+    !Number.isFinite(year_built) || year_built < 1700 || year_built > new Date().getFullYear()
+  ) {
+    return null;
+  }
+
+  const result: PropertyLookupResult = { sqft, bedrooms, bathrooms, year_built };
+
+  const lot = Number(r.lot_size_sqft);
+  if (Number.isFinite(lot) && lot > 100 && lot < 50_000_000) {
+    result.lot_size_sqft = Math.round(lot);
+  }
+
+  if (r.property_type) result.property_type = r.property_type;
+
+  return result;
+}
+
+async function lookupRentCast(address: string): Promise<PropertyLookupResult | null> {
+  const key = process.env.RENTCAST_API_KEY;
+  if (!key) return null;
+
   try {
-    const body = await request.json();
-    const { address } = body;
+    const url = `https://api.rentcast.io/v1/properties?address=${encodeURIComponent(address)}`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "X-Api-Key": key, Accept: "application/json" },
+      // RentCast occasionally stalls; cap the wait so the user isn't stuck.
+      signal: AbortSignal.timeout(8000),
+    });
 
-    if (!address || typeof address !== "string" || address.trim().length === 0) {
-      return json({ error: "A valid address string is required" }, 400);
-    }
+    if (!res.ok) return null;
 
-    let parsed: { sqft: number; bedrooms: number; bathrooms: number; year_built: number };
+    const payload = await res.json();
+    const record = Array.isArray(payload) ? payload[0] : payload;
+    if (!record || typeof record !== "object") return null;
 
-    try {
-      const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 512,
-        messages: [
-          {
-            role: "user",
-            content: `You are a US residential real estate expert. Given a property address, estimate the most likely property details based on the neighborhood, region, typical housing stock, and public data patterns for that area.
+    return sanitize({
+      sqft: record.squareFootage,
+      bedrooms: record.bedrooms,
+      bathrooms: record.bathrooms,
+      year_built: record.yearBuilt,
+      lot_size_sqft: record.lotSize,
+      property_type: mapRentCastPropertyType(record.propertyType),
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function lookupLLM(address: string): Promise<PropertyLookupResult | null> {
+  try {
+    const message = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 512,
+      messages: [
+        {
+          role: "user",
+          content: `You are a US residential real estate expert. Given a property address, estimate the most likely property details based on the neighborhood, region, typical housing stock, and public data patterns for that area.
 
 Address: ${address.trim()}
 
@@ -47,42 +122,38 @@ Use your knowledge of US housing patterns:
 - Provide reasonable middle-of-the-road estimates — these are starting defaults the user will adjust.
 
 Return ONLY valid JSON, no markdown or other text.`,
-          },
-        ],
-      });
+        },
+      ],
+    });
 
-      const textBlock = message.content.find((block) => block.type === "text");
-      if (!textBlock || textBlock.type !== "text") {
-        throw new Error("AI response did not contain a text block");
-      }
+    const textBlock = message.content.find((block) => block.type === "text");
+    if (!textBlock || textBlock.type !== "text") return null;
 
-      try {
-        parsed = JSON.parse(textBlock.text);
-      } catch {
-        throw new Error("Failed to parse AI JSON response");
-      }
-    } catch (aiError) {
-      // Sensible fallback defaults
-      return json({ sqft: 1800, bedrooms: 3, bathrooms: 2, year_built: 1995 });
+    const parsed = JSON.parse(textBlock.text);
+    return sanitize(parsed);
+  } catch {
+    return null;
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { address } = body;
+
+    if (!address || typeof address !== "string" || address.trim().length === 0) {
+      return json({ error: "A valid address string is required" }, 400);
     }
 
-    // Validate and sanitize the response
-    const sqft = Math.round(Number(parsed.sqft));
-    const bedrooms = Math.round(Number(parsed.bedrooms));
-    const bathrooms = Number(parsed.bathrooms);
-    const year_built = Math.round(Number(parsed.year_built));
+    const trimmed = address.trim();
 
-    if (
-      isNaN(sqft) || sqft < 200 || sqft > 20000 ||
-      isNaN(bedrooms) || bedrooms < 0 || bedrooms > 20 ||
-      isNaN(bathrooms) || bathrooms < 0 || bathrooms > 20 ||
-      isNaN(year_built) || year_built < 1700 || year_built > new Date().getFullYear()
-    ) {
-      // Return sensible defaults if AI values are out of range
-      return json({ sqft: 1800, bedrooms: 3, bathrooms: 2, year_built: 1995 });
-    }
+    const fromRentCast = await lookupRentCast(trimmed);
+    if (fromRentCast) return json(fromRentCast);
 
-    return json({ sqft, bedrooms, bathrooms, year_built });
+    const fromLLM = await lookupLLM(trimmed);
+    if (fromLLM) return json(fromLLM);
+
+    return json(FALLBACK);
   } catch {
     return json(
       { error: "Failed to look up property details. Please try again or enter them manually." },

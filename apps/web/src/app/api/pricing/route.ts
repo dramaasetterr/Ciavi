@@ -11,8 +11,8 @@ if (!process.env.ANTHROPIC_API_KEY) {
 
 const anthropic = new Anthropic();
 
-const PRICING_MODEL = "claude-sonnet-4-6";
-const PRICING_FALLBACK_MODEL = "claude-haiku-4-5-20251001";
+const PRICING_MODEL = "claude-opus-4-7";
+const PRICING_FALLBACK_MODEL = "claude-sonnet-4-6";
 const MAX_PHOTOS_TO_ANALYZE = 8;
 
 function buildPropertySummary(input: PricingInput): string {
