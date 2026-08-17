@@ -30,6 +30,7 @@ export default function SignUpPage() {
       password,
       options: {
         data: { full_name: fullName.trim() },
+        emailRedirectTo: "https://gochiavi.com/verified",
       },
     });
 

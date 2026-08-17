@@ -1,0 +1,30 @@
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; background-color: #FEF7E4; border-radius: 12px;">
+  <div style="text-align: center; margin-bottom: 24px;">
+    <span style="font-size: 28px; font-weight: 700; letter-spacing: 2px; color: #1C1C28;">CHIAVI</span>
+    <div style="color: #C4A265; font-size: 13px; letter-spacing: 1px; margin-top: 4px;">SELL YOUR HOME. KEEP YOUR EQUITY.</div>
+  </div>
+
+  <h2 style="color: #1C1C28; margin-bottom: 8px; text-align: center;">Confirm your email</h2>
+  <p style="color: #555; line-height: 1.6; text-align: center;">
+    Welcome to Chiavi! Tap the button below to verify your email address and
+    activate your account.
+  </p>
+
+  <div style="text-align: center; margin: 28px 0;">
+    <a href="{{ .ConfirmationURL }}"
+       style="display: inline-block; background-color: #C4A265; color: #ffffff; text-decoration: none; padding: 14px 36px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+      Verify My Email
+    </a>
+  </div>
+
+  <p style="color: #888; font-size: 13px; line-height: 1.5; text-align: center;">
+    If the button doesn't work, copy and paste this link into your browser:<br>
+    <a href="{{ .ConfirmationURL }}" style="color: #C4A265; word-break: break-all;">{{ .ConfirmationURL }}</a>
+  </p>
+
+  <hr style="border: none; border-top: 1px solid #e5ddc8; margin: 24px 0;">
+  <p style="color: #999; font-size: 12px; text-align: center;">
+    You're receiving this because you created a Chiavi account.
+    If this wasn't you, you can safely ignore this email.
+  </p>
+</div>

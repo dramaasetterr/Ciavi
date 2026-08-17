@@ -181,6 +181,15 @@ export type PoolType =
   | "infinity"
   | "indoor";
 
+/** Pool features that can be combined (e.g. an in-ground pool that is both saltwater and heated) */
+export const POOL_FEATURES = [
+  "saltwater",
+  "heated",
+  "infinity_edge",
+  "indoor",
+] as const;
+export type PoolFeature = (typeof POOL_FEATURES)[number];
+
 export const PREMIUM_FINISHES = [
   "marble_countertops",
   "granite_countertops",
@@ -251,6 +260,9 @@ export interface PricingInput {
   /** Pool type and premium pool features */
   pool_type?: PoolType;
   pool_has_spa?: boolean;
+
+  /** Combinable pool features (saltwater + heated + ...) — supplements pool_type */
+  pool_features?: PoolFeature[];
 
   /** Finished basement square footage (reported separately from main sqft) */
   finished_basement_sqft?: number;

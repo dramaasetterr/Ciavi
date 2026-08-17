@@ -11,8 +11,8 @@ if (!process.env.ANTHROPIC_API_KEY) {
 
 const anthropic = new Anthropic();
 
-const PRICING_MODEL = "claude-opus-4-7";
-const PRICING_FALLBACK_MODEL = "claude-sonnet-4-6";
+const PRICING_MODEL = "claude-opus-5";
+const PRICING_FALLBACK_MODEL = "claude-sonnet-5";
 const MAX_PHOTOS_TO_ANALYZE = 8;
 
 function buildPropertySummary(input: PricingInput): string {
@@ -59,8 +59,12 @@ function buildPropertySummary(input: PricingInput): string {
 
   if (input.pool_type && input.pool_type !== "none") {
     const poolLabel = input.pool_type.replace(/_/g, " ");
+    const features =
+      input.pool_features && input.pool_features.length > 0
+        ? `, ${input.pool_features.map((f) => f.replace(/_/g, " ")).join(", ")}`
+        : "";
     const spa = input.pool_has_spa ? " with attached spa/hot tub" : "";
-    lines.push(`Pool: ${poolLabel}${spa}`);
+    lines.push(`Pool: ${poolLabel}${features}${spa}`);
   }
 
   if (input.premium_finishes && input.premium_finishes.length > 0) {
@@ -211,7 +215,8 @@ async function callModel(
 ): Promise<PricingResult> {
   const message = await anthropic.messages.create({
     model,
-    max_tokens: 2000,
+    max_tokens: 8000,
+    output_config: { effort: "medium" },
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content }],
   });
@@ -261,6 +266,22 @@ export async function POST(request: NextRequest) {
       const result = await callModel(PRICING_FALLBACK_MODEL, content);
       return json(result);
     } catch {
+      // Photos are the most common failure cause (bad URLs, unsupported
+      // formats, oversized files) — retry once on text alone rather than
+      // failing the whole valuation.
+      if (hasPhotos) {
+        try {
+          const textOnly = await buildContentBlocks(input, false);
+          const result = await callModel(PRICING_MODEL, textOnly);
+          return json({
+            ...result,
+            photo_warning:
+              "Your photos could not be analyzed, so this valuation is based on the property details only.",
+          });
+        } catch {
+          // fall through to the error response
+        }
+      }
       return json(
         {
           error:

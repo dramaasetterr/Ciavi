@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
     if (seller?.email) {
       try {
         await getResend().emails.send({
-          from: "Chiavi <notifications@chiavi.com>",
+          from: "Chiavi <notifications@gochiavi.com>",
           to: seller.email,
           subject: `New Showing Booked — ${listing.address}`,
           html: `

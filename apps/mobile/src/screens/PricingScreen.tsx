@@ -22,6 +22,7 @@ import type {
   PricingInput,
   PropertyCondition,
   PoolType,
+  PoolFeature,
   PremiumFinish,
   OutdoorFeature,
 } from "../shared";
@@ -31,6 +32,7 @@ import {
   PROPERTY_TYPE_LABELS,
   PROPERTY_TYPES,
 } from "../shared";
+import { uploadPhoto } from "../lib/uploadImage";
 import { colors, shadows, spacing, borderRadius, typography } from "../theme";
 import AddressAutocomplete from "../components/AddressAutocomplete";
 import { supabase } from "../lib/supabase";
@@ -48,10 +50,12 @@ const POOL_TYPES: { key: PoolType; label: string }[] = [
   { key: "none", label: "No Pool" },
   { key: "above_ground", label: "Above Ground" },
   { key: "in_ground", label: "In-Ground" },
+];
+
+const POOL_FEATURE_OPTIONS: { key: PoolFeature; label: string }[] = [
   { key: "saltwater", label: "Saltwater" },
   { key: "heated", label: "Heated" },
-  { key: "saltwater_heated", label: "Saltwater + Heated" },
-  { key: "infinity", label: "Infinity" },
+  { key: "infinity_edge", label: "Infinity Edge" },
   { key: "indoor", label: "Indoor" },
 ];
 
@@ -124,7 +128,18 @@ export default function PricingScreen() {
 
   // Pool
   const [poolType, setPoolType] = useState<PoolType>("none");
+  const [poolFeatures, setPoolFeatures] = useState<PoolFeature[]>([]);
   const [poolHasSpa, setPoolHasSpa] = useState(false);
+  const [processingPhotos, setProcessingPhotos] = useState(false);
+  const [autofilledFromRecords, setAutofilledFromRecords] = useState(false);
+
+  const togglePoolFeature = (feature: PoolFeature) => {
+    setPoolFeatures((prev) =>
+      prev.includes(feature)
+        ? prev.filter((f) => f !== feature)
+        : [...prev, feature]
+    );
+  };
 
   // Basement
   const [finishedBasementSqft, setFinishedBasementSqft] = useState("");
@@ -170,14 +185,19 @@ export default function PricingScreen() {
       Alert.alert("Permission Needed", "Please allow photo access to upload images.");
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      selectionLimit: remaining,
-      quality: 0.75,
-    });
-    if (!result.canceled && result.assets) {
-      setPhotos((prev) => [...prev, ...result.assets].slice(0, MAX_PRICING_PHOTOS));
+    setProcessingPhotos(true);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
+        quality: 0.75,
+      });
+      if (!result.canceled && result.assets) {
+        setPhotos((prev) => [...prev, ...result.assets].slice(0, MAX_PRICING_PHOTOS));
+      }
+    } finally {
+      setProcessingPhotos(false);
     }
   };
 
@@ -189,27 +209,25 @@ export default function PricingScreen() {
     if (!user || photos.length === 0) return [];
     setUploadingPhotos(true);
     const urls: string[] = [];
+    let failedCount = 0;
     try {
       for (let i = 0; i < photos.length; i++) {
         try {
-          const p = photos[i];
-          const ext = (p.uri.split(".").pop() || "jpg").split("?")[0];
-          const fileName = `${user.id}/pricing_${Date.now()}_${i}.${ext}`;
-          const resp = await fetch(p.uri);
-          const blob = await resp.blob();
-          const { error } = await supabase.storage
-            .from("listing-photos")
-            .upload(fileName, blob, { contentType: p.mimeType || "image/jpeg" });
-          if (error) continue;
-          const { data } = supabase.storage.from("listing-photos").getPublicUrl(fileName);
-          if (data?.publicUrl) urls.push(data.publicUrl);
+          const fileName = `${user.id}/pricing_${Date.now()}_${i}.jpg`;
+          const publicUrl = await uploadPhoto("listing-photos", fileName, photos[i].uri);
+          urls.push(publicUrl);
         } catch {
-          // skip this photo, continue with the rest
-          continue;
+          failedCount++;
         }
       }
     } finally {
       setUploadingPhotos(false);
+    }
+    if (failedCount > 0) {
+      Alert.alert(
+        "Photo Upload",
+        `${failedCount} photo(s) could not be uploaded. The analysis will use the ${urls.length} that succeeded.`
+      );
     }
     return urls;
   };
@@ -238,7 +256,13 @@ export default function PricingScreen() {
         ...(lotSize ? { lot_size_sqft: parseInt(lotSize, 10) } : {}),
         ...(garageSpaces ? { garage_spaces: parseInt(garageSpaces, 10) } : {}),
         ...(parkingSpaces ? { parking_spaces: parseInt(parkingSpaces, 10) } : {}),
-        ...(poolType !== "none" ? { pool_type: poolType, pool_has_spa: poolHasSpa } : {}),
+        ...(poolType !== "none"
+          ? {
+              pool_type: poolType,
+              pool_has_spa: poolHasSpa,
+              ...(poolFeatures.length > 0 ? { pool_features: poolFeatures } : {}),
+            }
+          : {}),
         ...(finishedBasementSqft
           ? {
               finished_basement_sqft: parseInt(finishedBasementSqft, 10),
@@ -334,8 +358,22 @@ export default function PricingScreen() {
                 if (data.property_type && PROPERTY_TYPES.includes(data.property_type as any)) {
                   setPropertyType(data.property_type as (typeof PROPERTY_TYPES)[number]);
                 }
+                if (data.sqft || data.lot_size_sqft) {
+                  setAutofilledFromRecords(true);
+                }
               }}
             />
+
+            {autofilledFromRecords && (
+              <View style={styles.verifyBanner}>
+                <Text style={styles.verifyBannerIcon}>{"✏️"}</Text>
+                <Text style={styles.verifyBannerText}>
+                  Square footage and lot size were auto-filled from public
+                  records, which can be outdated or wrong. Tap the fields below
+                  to correct them — accurate numbers matter most for pricing.
+                </Text>
+              </View>
+            )}
 
             <Text style={styles.label}>Property Type</Text>
             <View style={styles.pillRow}>
@@ -499,15 +537,42 @@ export default function PricingScreen() {
               ))}
             </View>
             {poolType !== "none" && (
-              <View style={styles.switchRow}>
-                <Text style={styles.switchLabel}>Attached spa / hot tub</Text>
-                <Switch
-                  value={poolHasSpa}
-                  onValueChange={setPoolHasSpa}
-                  trackColor={{ false: colors.border, true: colors.primaryLight }}
-                  thumbColor={poolHasSpa ? colors.primary : colors.white}
-                />
-              </View>
+              <>
+                <Text style={[styles.label, { marginTop: spacing.sm }]}>
+                  Pool features (select all that apply)
+                </Text>
+                <View style={styles.pillRow}>
+                  {POOL_FEATURE_OPTIONS.map((f) => (
+                    <TouchableOpacity
+                      key={f.key}
+                      style={[
+                        styles.pill,
+                        poolFeatures.includes(f.key) && styles.pillActive,
+                      ]}
+                      onPress={() => togglePoolFeature(f.key)}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.pillText,
+                          poolFeatures.includes(f.key) && styles.pillTextActive,
+                        ]}
+                      >
+                        {f.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.switchRow}>
+                  <Text style={styles.switchLabel}>Attached spa / hot tub</Text>
+                  <Switch
+                    value={poolHasSpa}
+                    onValueChange={setPoolHasSpa}
+                    trackColor={{ false: colors.border, true: colors.primaryLight }}
+                    thumbColor={poolHasSpa ? colors.primary : colors.white}
+                  />
+                </View>
+              </>
             )}
           </View>
 
@@ -646,10 +711,18 @@ export default function PricingScreen() {
               style={styles.addPhotoButton}
               onPress={pickPhotos}
               activeOpacity={0.8}
+              disabled={processingPhotos}
             >
-              <Text style={styles.addPhotoText}>
-                {photos.length === 0 ? "+ Add Photos" : "+ Add More Photos"}
-              </Text>
+              {processingPhotos ? (
+                <View style={styles.photoLoadingRow}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={styles.addPhotoText}>  Loading photos...</Text>
+                </View>
+              ) : (
+                <Text style={styles.addPhotoText}>
+                  {photos.length === 0 ? "+ Add Photos" : "+ Add More Photos"}
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -745,6 +818,29 @@ const styles = StyleSheet.create({
     color: colors.errorDark,
     flex: 1,
     lineHeight: 20,
+  },
+  verifyBanner: {
+    backgroundColor: colors.primaryLight + "30",
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.primary + "40",
+  },
+  verifyBannerIcon: { fontSize: 16, marginRight: spacing.sm, marginTop: 1 },
+  verifyBannerText: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    flex: 1,
+    lineHeight: 20,
+  },
+  photoLoadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
   sectionHeader: {
     ...typography.h3,

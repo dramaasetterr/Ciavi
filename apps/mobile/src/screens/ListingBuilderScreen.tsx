@@ -24,6 +24,7 @@ import {
 } from "../shared";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase";
+import { uploadPhoto } from "../lib/uploadImage";
 import { colors, shadows, spacing, borderRadius, typography } from "../theme";
 import AddressAutocomplete from "../components/AddressAutocomplete";
 import { useTierAccess } from "../hooks/useTierAccess";
@@ -163,26 +164,16 @@ export default function ListingBuilderScreen({ navigation }: Props) {
 
     for (let i = 0; i < orderedPhotos.length; i++) {
       const photo = orderedPhotos[i];
-      const ext = photo.uri.split(".").pop() || "jpg";
-      const fileName = `${user.id}/${Date.now()}_${i}.${ext}`;
+      const fileName = `${user.id}/${Date.now()}_${i}.jpg`;
 
-      const response = await fetch(photo.uri);
-      const blob = await response.blob();
-
-      const { error } = await supabase.storage
-        .from("listing-photos")
-        .upload(fileName, blob, { contentType: photo.mimeType || "image/jpeg" });
-
-      if (error) {
+      try {
+        const publicUrl = await uploadPhoto("listing-photos", fileName, photo.uri);
+        urls.push(publicUrl);
+      } catch {
         failedCount++;
         continue;
       }
 
-      const { data: urlData } = supabase.storage
-        .from("listing-photos")
-        .getPublicUrl(fileName);
-
-      urls.push(urlData.publicUrl);
       setUploadProgress(Math.round(((i + 1) / orderedPhotos.length) * 100));
     }
 

@@ -15,6 +15,7 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase";
+import { uploadFileToStorage } from "../lib/uploadImage";
 import type { AppStackParamList } from "../../App";
 import type { Document } from "../shared";
 import { colors, shadows, spacing, borderRadius, typography } from "../theme";
@@ -64,12 +65,9 @@ export default function DocumentViewerScreen() {
     // Upload to Supabase Storage
     if (user) {
       try {
-        const fileResponse = await fetch(uri);
-        const blob = await fileResponse.blob();
         const filePath = `${user.id}/${doc.id}.pdf`;
 
-        await supabase.storage.from("documents").upload(filePath, blob, {
-          contentType: "application/pdf",
+        await uploadFileToStorage("documents", filePath, uri, "application/pdf", {
           upsert: true,
         });
 

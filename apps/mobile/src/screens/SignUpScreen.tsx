@@ -83,6 +83,7 @@ export default function SignUpScreen({ navigation }: Props) {
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
+      options: { emailRedirectTo: "https://gochiavi.com/verified" },
     });
 
     if (error) {
