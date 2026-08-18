@@ -1,5 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
+
+// Service-role client: this route is called from the mobile app to notify a
+// *different* user, whose push token is not readable under caller RLS.
+let _supabase: any = null;
+function getSupabase(): any {
+  if (!_supabase) {
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) throw new Error("Missing Supabase env");
+    _supabase = createServiceClient(url, key);
+  }
+  return _supabase;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,7 +25,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = await createClient();
+    const supabase = getSupabase();
 
     // Look up the user's push token
     const { data: profile, error: profileError } = await supabase

@@ -16,7 +16,16 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { AppStackParamList } from "../../App";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase";
+import { sendPush } from "../lib/notify";
 import { colors, shadows, spacing, borderRadius, typography } from "../theme";
+
+type BuyerStatus = "cash" | "pre_approved" | "exploring";
+
+const BUYER_STATUS_OPTIONS: { key: BuyerStatus; label: string; tag: string }[] = [
+  { key: "cash", label: "💵 Cash Buyer", tag: "Cash buyer" },
+  { key: "pre_approved", label: "✅ Pre-Approved", tag: "Pre-approved for financing" },
+  { key: "exploring", label: "👀 Still Exploring", tag: "Exploring financing options" },
+];
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,6 +56,7 @@ export default function ContactSellerScreen() {
 
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
+  const [buyerStatus, setBuyerStatus] = useState<BuyerStatus | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
@@ -103,12 +113,21 @@ export default function ContactSellerScreen() {
 
     setSending(true);
 
+    // First message carries the buyer's financing status so the seller can
+    // gauge how serious the inquiry is.
+    const statusTag = buyerStatus
+      ? BUYER_STATUS_OPTIONS.find((o) => o.key === buyerStatus)?.tag
+      : null;
+    const content = statusTag
+      ? `💰 ${statusTag}\n\n${message.trim()}`
+      : message.trim();
+
     try {
       const { error: insertError } = await supabase.from("messages").insert({
         listing_id: listingId,
         sender_id: user.id,
         receiver_id: listing.user_id,
-        content: message.trim(),
+        content,
         sender_name: name.trim() || user.email || "Chiavi user",
         sender_email: user.email || "",
         read: false,
@@ -117,6 +136,12 @@ export default function ContactSellerScreen() {
       if (insertError) {
         setError("Could not send your message. Please check your connection and try again.");
       } else {
+        sendPush(
+          listing.user_id,
+          "New message about your listing",
+          `${name.trim() || "A buyer"}: ${message.trim().slice(0, 120)}`,
+          { type: "message", listingId, otherPartyId: user.id }
+        );
         // Drop the buyer straight into the conversation thread — all further
         // back-and-forth lives in Messages.
         navigation.replace("Conversation", {
@@ -195,6 +220,34 @@ export default function ContactSellerScreen() {
                     <Text style={styles.errorBannerText}>{error}</Text>
                   </View>
                 ) : null}
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Where are you in your home search?</Text>
+                  <View style={styles.statusRow}>
+                    {BUYER_STATUS_OPTIONS.map((o) => (
+                      <TouchableOpacity
+                        key={o.key}
+                        style={[
+                          styles.statusChip,
+                          buyerStatus === o.key && styles.statusChipActive,
+                        ]}
+                        onPress={() =>
+                          setBuyerStatus(buyerStatus === o.key ? null : o.key)
+                        }
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.statusChipText,
+                            buyerStatus === o.key && styles.statusChipTextActive,
+                          ]}
+                        >
+                          {o.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
 
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Message</Text>
@@ -359,6 +412,31 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     lineHeight: 18,
+  },
+  statusRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  statusChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statusChipActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primaryLight,
+  },
+  statusChipText: {
+    ...typography.caption,
+    color: colors.textPrimary,
+  },
+  statusChipTextActive: {
+    color: colors.white,
+    fontWeight: "700",
   },
 
   // Error

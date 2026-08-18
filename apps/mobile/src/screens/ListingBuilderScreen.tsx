@@ -13,6 +13,7 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
+  Share,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -365,22 +366,26 @@ export default function ListingBuilderScreen({ navigation }: Props) {
     setPublishing(true);
     try {
       const orderedUrls = getOrderedPhotoUrls();
-      const { error: insertError } = await supabase.from("listings").insert({
-        user_id: user.id,
-        address,
-        bedrooms: parseInt(bedrooms, 10),
-        bathrooms: parseInt(bathrooms, 10),
-        sqft: parseInt(sqft, 10),
-        year_built: parseInt(yearBuilt, 10),
-        property_type: propertyType,
-        hoa,
-        hoa_fee: hoa && hoaFee ? parseFloat(hoaFee) : null,
-        title,
-        description,
-        photos: orderedUrls,
-        price: selectedPrice,
-        status: "active",
-      });
+      const { data: created, error: insertError } = await supabase
+        .from("listings")
+        .insert({
+          user_id: user.id,
+          address,
+          bedrooms: parseInt(bedrooms, 10),
+          bathrooms: parseInt(bathrooms, 10),
+          sqft: parseInt(sqft, 10),
+          year_built: parseInt(yearBuilt, 10),
+          property_type: propertyType,
+          hoa,
+          hoa_fee: hoa && hoaFee ? parseFloat(hoaFee) : null,
+          title,
+          description,
+          photos: orderedUrls,
+          price: selectedPrice,
+          status: "active",
+        })
+        .select("id")
+        .single();
 
       if (insertError) throw insertError;
 
@@ -391,7 +396,31 @@ export default function ListingBuilderScreen({ navigation }: Props) {
 
       if (updateError) throw updateError;
 
-      navigation.navigate("Home");
+      // Next steps: the listing only sells if people see it.
+      Alert.alert(
+        "🎉 Your listing is live!",
+        "Now get it in front of buyers — share it and post it to Zillow and other sites.",
+        [
+          {
+            text: "Get Listed Everywhere",
+            onPress: () => navigation.navigate("Syndication"),
+          },
+          {
+            text: "Share Listing",
+            onPress: async () => {
+              try {
+                await Share.share({
+                  message: `${title || address} — For Sale By Owner on Chiavi\nhttps://gochiavi.com/show/${created?.id}`,
+                  url: `https://gochiavi.com/show/${created?.id}`,
+                });
+              } finally {
+                navigation.navigate("Home");
+              }
+            },
+          },
+          { text: "Done", onPress: () => navigation.navigate("Home") },
+        ]
+      );
     } catch {
       Alert.alert("Error", "Could not publish listing. Please try again.");
     } finally {

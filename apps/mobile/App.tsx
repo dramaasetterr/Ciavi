@@ -30,6 +30,7 @@ import MarketplaceScreen from "./src/screens/MarketplaceScreen";
 import ListingDetailScreen from "./src/screens/ListingDetailScreen";
 import BookShowingScreen from "./src/screens/BookShowingScreen";
 import SyndicationScreen from "./src/screens/SyndicationScreen";
+import OpenHouseScreen from "./src/screens/OpenHouseScreen";
 import UpgradeScreen from "./src/screens/UpgradeScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
 import MessagesScreen from "./src/screens/MessagesScreen";
@@ -69,6 +70,7 @@ export type AppStackParamList = {
   ListingDetail: { listingId: string };
   BookShowing: { listingId: string };
   Syndication: undefined;
+  OpenHouse: { listingId: string };
   Messages: undefined;
   Conversation: { listingId: string; otherPartyId: string; otherPartyName: string };
   ContactSeller: { listingId: string };
@@ -155,6 +157,7 @@ function AppNavigator({ navigationRef }: { navigationRef: React.RefObject<Naviga
       <AppStack.Screen name="ListingDetail" component={ListingDetailScreen} />
       <AppStack.Screen name="BookShowing" component={BookShowingScreen} />
       <AppStack.Screen name="Syndication" component={SyndicationScreen} />
+      <AppStack.Screen name="OpenHouse" component={OpenHouseScreen} />
       <AppStack.Screen name="Messages" component={MessagesScreen} />
       <AppStack.Screen name="Conversation" component={ConversationScreen} />
       <AppStack.Screen name="ContactSeller" component={ContactSellerScreen} />

@@ -42,6 +42,9 @@ interface ListingSummary {
   bedrooms: number;
   bathrooms: number;
   sqft: number;
+  year_built?: number;
+  hoa_fee?: number | null;
+  title?: string;
   property_type: string;
   description: string;
   status: string;
@@ -188,23 +191,35 @@ export default function SyndicationScreen() {
 
   const buildListingText = (): string => {
     if (!listing) return 'No listing data available.';
+    const typeLabel = (listing.property_type || 'N/A')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
     const lines = [
       `FOR SALE BY OWNER`,
       ``,
+    ];
+    if (listing.title) lines.push(listing.title, ``);
+    lines.push(
       `${listing.address}`,
-      `${listing.city}, ${listing.state} ${listing.zip || ''}`.trim(),
+      `${listing.city || ''}${listing.city ? ', ' : ''}${listing.state || ''} ${listing.zip || ''}`.trim(),
       ``,
       `Price: $${listing.price?.toLocaleString()}`,
       `Bedrooms: ${listing.bedrooms ?? 'N/A'}`,
       `Bathrooms: ${listing.bathrooms ?? 'N/A'}`,
       `Square Feet: ${listing.sqft?.toLocaleString() ?? 'N/A'}`,
-      `Property Type: ${listing.property_type || 'N/A'}`,
-      ``,
-    ];
+      `Property Type: ${typeLabel}`,
+    );
+    if (listing.year_built) lines.push(`Year Built: ${listing.year_built}`);
+    if (listing.hoa_fee != null) lines.push(`HOA: $${listing.hoa_fee}/mo`);
+    lines.push(``);
     if (listing.description) {
       lines.push(`Description:`, listing.description, ``);
     }
-    lines.push(`Listed on Chiavi — sell your home without an agent.`);
+    lines.push(
+      `Full listing with photos: https://gochiavi.com/show/${listing.id}`,
+      ``,
+      `Listed on Chiavi — sell your home without an agent.`
+    );
     return lines.join('\n');
   };
 
@@ -254,11 +269,15 @@ export default function SyndicationScreen() {
           </Text>
         </View>
 
-        {/* Copy All button */}
+        {/* Copy Listing Kit */}
         <TouchableOpacity style={styles.copyAllButton} onPress={copyListingDetails}>
           <Text style={styles.copyAllIcon}>📋</Text>
-          <Text style={styles.copyAllText}>Copy All Listing Details</Text>
+          <Text style={styles.copyAllText}>Copy Listing Kit</Text>
         </TouchableOpacity>
+        <Text style={styles.copyAllHint}>
+          One tap copies your headline, description, specs, and listing link —
+          ready to paste into any site below.
+        </Text>
 
         {/* Platform cards */}
         {PLATFORMS.map((platform) => {
@@ -366,9 +385,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryLight,
     paddingVertical: spacing.md,
     borderRadius: borderRadius.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xs,
     gap: spacing.sm,
     ...shadows.md,
+  },
+  copyAllHint: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+    lineHeight: 18,
   },
   copyAllIcon: {
     fontSize: 18,

@@ -17,6 +17,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { AppStackParamList } from "../../App";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase";
+import { sendPush } from "../lib/notify";
 import { colors, shadows, spacing, borderRadius, typography } from "../theme";
 
 // ---------------------------------------------------------------------------
@@ -203,6 +204,13 @@ export default function ConversationScreen() {
 
       if (error) {
         setText(content); // Restore text on failure
+      } else {
+        sendPush(
+          otherPartyId,
+          "New message on Chiavi",
+          content.slice(0, 140),
+          { type: "message", listingId, otherPartyId: user.id }
+        );
       }
     } catch (err) {
       setText(content);

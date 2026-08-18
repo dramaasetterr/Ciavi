@@ -70,10 +70,10 @@ export async function POST(request: NextRequest) {
       return json({ error: "Listing not found" }, 404);
     }
 
-    // Get seller profile for email
+    // Get seller profile for email + push notification
     const { data: seller } = await getSupabase()
       .from("profiles")
-      .select("email, full_name")
+      .select("email, full_name, push_token")
       .eq("id", listing.user_id)
       .single();
 
@@ -104,6 +104,21 @@ export async function POST(request: NextRequest) {
       .from("showing_availability")
       .update({ is_booked: true })
       .eq("id", slot_id);
+
+    // Push notification to the seller (fire-and-forget)
+    if (seller?.push_token) {
+      fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          to: seller.push_token,
+          title: "New showing booked! 🏠",
+          body: `${buyer_name} booked a showing for ${listing.address} on ${slot.date}`,
+          data: { type: "showing", listingId: listing_id },
+          sound: "default",
+        }),
+      }).catch(() => {});
+    }
 
     // Format time for email
     const formatTime = (time: string) => {

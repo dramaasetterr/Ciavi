@@ -81,6 +81,8 @@ export default function HomeScreen() {
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [mode, setMode] = useState<Mode>("selling");
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [upcomingShowings, setUpcomingShowings] = useState(0);
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
@@ -102,6 +104,27 @@ export default function HomeScreen() {
       // Continue with defaults if profile fetch fails
     } finally {
       setLoadingProfile(false);
+    }
+
+    // Attention counters — what needs the user right now.
+    try {
+      const { count: unread } = await supabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("receiver_id", user.id)
+        .eq("read", false);
+      setUnreadMessages(unread || 0);
+
+      const today = new Date().toISOString().slice(0, 10);
+      const { count: showings } = await supabase
+        .from("showings")
+        .select("id", { count: "exact", head: true })
+        .eq("seller_id", user.id)
+        .eq("status", "confirmed")
+        .gte("showing_date", today);
+      setUpcomingShowings(showings || 0);
+    } catch {
+      // Non-critical
     }
   }, [user]);
 
@@ -165,6 +188,8 @@ export default function HomeScreen() {
   // ---------------------------------------------------------------------------
   const renderBuyerView = () => (
     <>
+      {renderAttention()}
+
       {/* Hero card */}
       <View style={styles.buyerHeroCard}>
         <Text style={styles.buyerHeroIcon}>{"\uD83C\uDFE1"}</Text>
@@ -235,8 +260,47 @@ export default function HomeScreen() {
   // ---------------------------------------------------------------------------
   // Seller view (existing)
   // ---------------------------------------------------------------------------
+  const renderAttention = () => {
+    if (unreadMessages === 0 && upcomingShowings === 0) return null;
+    return (
+      <View style={styles.attentionSection}>
+        <Text style={styles.attentionTitle}>Needs your attention</Text>
+        {unreadMessages > 0 && (
+          <TouchableOpacity
+            style={styles.attentionCard}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate("Messages")}
+          >
+            <Text style={styles.attentionIcon}>{"💬"}</Text>
+            <Text style={styles.attentionText}>
+              {unreadMessages} unread {unreadMessages === 1 ? "message" : "messages"} — buyers
+              who reply fast sell fast
+            </Text>
+            <Text style={styles.attentionArrow}>{"→"}</Text>
+          </TouchableOpacity>
+        )}
+        {upcomingShowings > 0 && (
+          <TouchableOpacity
+            style={styles.attentionCard}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate("Showings")}
+          >
+            <Text style={styles.attentionIcon}>{"📅"}</Text>
+            <Text style={styles.attentionText}>
+              {upcomingShowings} upcoming {upcomingShowings === 1 ? "showing" : "showings"} on
+              your calendar
+            </Text>
+            <Text style={styles.attentionArrow}>{"→"}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
   const renderSellerView = () => (
     <>
+      {renderAttention()}
+
       {/* Hero / Current Stage Card */}
       <View style={styles.heroCard}>
         {/* Top accent strip */}
@@ -816,6 +880,42 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderLeftWidth: 4,
     borderLeftColor: colors.amber,
+  },
+  attentionSection: {
+    marginBottom: spacing.lg,
+  },
+  attentionTitle: {
+    ...typography.captionBold,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: spacing.sm,
+  },
+  attentionCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.primaryLight,
+    ...shadows.sm,
+  },
+  attentionIcon: {
+    fontSize: 22,
+    marginRight: spacing.md,
+  },
+  attentionText: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    flex: 1,
+    lineHeight: 19,
+  },
+  attentionArrow: {
+    ...typography.bodyBold,
+    color: colors.primaryLight,
+    marginLeft: spacing.sm,
   },
   tipHeader: {
     flexDirection: "row",

@@ -130,7 +130,8 @@ export default function ListingDetailScreen() {
     if (!listing) return;
     try {
       await Share.share({
-        message: `Check out this listing: ${listing.address}, ${listing.city}, ${listing.state} - $${listing.price?.toLocaleString()}`,
+        message: `${listing.address}, ${listing.city}, ${listing.state} — $${listing.price?.toLocaleString()} · For Sale By Owner on Chiavi\nhttps://gochiavi.com/show/${listing.id}`,
+        url: `https://gochiavi.com/show/${listing.id}`,
       });
     } catch (err) {
     }
@@ -321,32 +322,63 @@ export default function ListingDetailScreen() {
           </View>
         </View>
 
-        {/* Action buttons */}
-        <View style={{ flexDirection: 'row', marginHorizontal: spacing.lg, gap: spacing.sm, marginBottom: spacing.md }}>
-          <TouchableOpacity
-            style={[styles.showingButton, { flex: 1, marginHorizontal: 0 }]}
-            activeOpacity={0.8}
-            onPress={callSeller}
-          >
-            <Text style={styles.showingButtonText}>📞 Call Seller</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.contactSellerButton, { flex: 1, marginHorizontal: 0 }]}
-            activeOpacity={0.8}
-            onPress={() => navigation.navigate('ContactSeller', { listingId: listing.id })}
-          >
-            <Text style={styles.contactSellerButtonText}>✉️ Message</Text>
-          </TouchableOpacity>
-        </View>
+        {user?.id === listing.user_id ? (
+          <>
+            {/* Owner actions */}
+            <View style={{ flexDirection: 'row', marginHorizontal: spacing.lg, gap: spacing.sm, marginBottom: spacing.md }}>
+              <TouchableOpacity
+                style={[styles.showingButton, { flex: 1, marginHorizontal: 0 }]}
+                activeOpacity={0.8}
+                onPress={handleShare}
+              >
+                <Text style={styles.showingButtonText}>📣 Share Listing</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.contactSellerButton, { flex: 1, marginHorizontal: 0 }]}
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate('OpenHouse', { listingId: listing.id })}
+              >
+                <Text style={styles.contactSellerButtonText}>🚪 Open House Mode</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.showingButton}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('Syndication')}
+            >
+              <Text style={styles.showingButtonText}>🌐 Get Listed Everywhere</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            {/* Buyer actions */}
+            <View style={{ flexDirection: 'row', marginHorizontal: spacing.lg, gap: spacing.sm, marginBottom: spacing.md }}>
+              <TouchableOpacity
+                style={[styles.showingButton, { flex: 1, marginHorizontal: 0 }]}
+                activeOpacity={0.8}
+                onPress={callSeller}
+              >
+                <Text style={styles.showingButtonText}>📞 Call Seller</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.contactSellerButton, { flex: 1, marginHorizontal: 0 }]}
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate('ContactSeller', { listingId: listing.id })}
+              >
+                <Text style={styles.contactSellerButtonText}>✉️ Message</Text>
+              </TouchableOpacity>
+            </View>
 
-        {/* Schedule Showing */}
-        <TouchableOpacity
-          style={styles.showingButton}
-          activeOpacity={0.8}
-          onPress={() => navigation.navigate('BookShowing', { listingId: listing.id })}
-        >
-          <Text style={styles.showingButtonText}>📅 Schedule a Showing</Text>
-        </TouchableOpacity>
+            {/* Schedule Showing */}
+            <TouchableOpacity
+              style={styles.showingButton}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('BookShowing', { listingId: listing.id })}
+            >
+              <Text style={styles.showingButtonText}>📅 Schedule a Showing</Text>
+            </TouchableOpacity>
+          </>
+        )}
 
         {/* Make an Offer info */}
         <View style={styles.offerInfoCard}>
