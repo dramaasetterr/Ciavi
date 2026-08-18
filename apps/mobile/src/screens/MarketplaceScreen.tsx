@@ -4,6 +4,7 @@ import {
   Alert,
   Image,
   Linking,
+  Modal,
   RefreshControl,
   SafeAreaView,
   ScrollView,
@@ -44,13 +45,25 @@ interface SellerProfile {
   phone: string | null;
 }
 
-type PropertyFilter = 'All' | 'House' | 'Condo' | 'Townhouse';
-type PriceFilter = 'Any' | 'Under 300k' | '300k-500k' | '500k-750k' | '750k+';
+type PropertyFilter = 'All' | 'House' | 'Condo' | 'Townhouse' | 'Multi-Family' | 'Land' | 'Mobile';
+type PriceFilter = 'Any' | 'Under 300k' | '300k-500k' | '500k-750k' | '750k-1M' | '1M+';
+type MinFilter = 0 | 1 | 2 | 3 | 4 | 5;
 type SortOption = 'Newest' | 'Price: Low' | 'Price: High' | 'Sqft';
 
-const PROPERTY_FILTERS: PropertyFilter[] = ['All', 'House', 'Condo', 'Townhouse'];
-const PRICE_FILTERS: PriceFilter[] = ['Any', 'Under 300k', '300k-500k', '500k-750k', '750k+'];
+const PROPERTY_FILTERS: PropertyFilter[] = ['All', 'House', 'Condo', 'Townhouse', 'Multi-Family', 'Land', 'Mobile'];
+const PRICE_FILTERS: PriceFilter[] = ['Any', 'Under 300k', '300k-500k', '500k-750k', '750k-1M', '1M+'];
+const BEDS_FILTERS: MinFilter[] = [0, 1, 2, 3, 4, 5];
+const BATHS_FILTERS: MinFilter[] = [0, 1, 2, 3];
 const SORT_OPTIONS: SortOption[] = ['Newest', 'Price: Low', 'Price: High', 'Sqft'];
+
+const PROPERTY_FILTER_MAP: Record<string, string> = {
+  House: 'single_family',
+  Condo: 'condo',
+  Townhouse: 'townhouse',
+  'Multi-Family': 'multi_family',
+  Land: 'land',
+  Mobile: 'mobile_home',
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -66,8 +79,10 @@ function matchesPriceFilter(price: number, filter: PriceFilter): boolean {
       return price >= 300_000 && price < 500_000;
     case '500k-750k':
       return price >= 500_000 && price < 750_000;
-    case '750k+':
-      return price >= 750_000;
+    case '750k-1M':
+      return price >= 750_000 && price < 1_000_000;
+    case '1M+':
+      return price >= 1_000_000;
     default:
       return true;
   }
@@ -88,8 +103,24 @@ export default function MarketplaceScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [propertyFilter, setPropertyFilter] = useState<PropertyFilter>('All');
   const [priceFilter, setPriceFilter] = useState<PriceFilter>('Any');
+  const [minBeds, setMinBeds] = useState<MinFilter>(0);
+  const [minBaths, setMinBaths] = useState<MinFilter>(0);
   const [sortOption, setSortOption] = useState<SortOption>('Newest');
   const [showFilters, setShowFilters] = useState(false);
+
+  const activeFilterCount =
+    (propertyFilter !== 'All' ? 1 : 0) +
+    (priceFilter !== 'Any' ? 1 : 0) +
+    (minBeds > 0 ? 1 : 0) +
+    (minBaths > 0 ? 1 : 0);
+
+  const resetFilters = () => {
+    setPropertyFilter('All');
+    setPriceFilter('Any');
+    setMinBeds(0);
+    setMinBaths(0);
+    setSortOption('Newest');
+  };
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
 
   const fetchListings = useCallback(async () => {
@@ -195,14 +226,11 @@ export default function MarketplaceScreen() {
         if (!match) return false;
       }
       if (propertyFilter !== 'All') {
-        const typeMap: Record<string, string> = {
-          'House': 'single_family',
-          'Condo': 'condo',
-          'Townhouse': 'townhouse',
-        };
-        if (l.property_type !== typeMap[propertyFilter]) return false;
+        if (l.property_type !== PROPERTY_FILTER_MAP[propertyFilter]) return false;
       }
       if (!matchesPriceFilter(l.price, priceFilter)) return false;
+      if (minBeds > 0 && (l.bedrooms || 0) < minBeds) return false;
+      if (minBaths > 0 && (l.bathrooms || 0) < minBaths) return false;
       return true;
     })
     .sort((a, b) => {
@@ -357,88 +385,140 @@ export default function MarketplaceScreen() {
           onChangeText={setSearchQuery}
         />
         <TouchableOpacity
-          style={[styles.filterToggle, showFilters && styles.filterToggleActive]}
-          onPress={() => setShowFilters(!showFilters)}
+          style={[styles.filterToggle, activeFilterCount > 0 && styles.filterToggleActive]}
+          onPress={() => setShowFilters(true)}
         >
-          <Text style={[styles.filterToggleText, showFilters && styles.filterToggleTextActive]}>
-            Filters {showFilters ? '▲' : '▼'}
+          <Text
+            style={[
+              styles.filterToggleText,
+              activeFilterCount > 0 && styles.filterToggleTextActive,
+            ]}
+          >
+            Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Expandable filters */}
-      {showFilters && (
-        <View style={styles.filtersContainer}>
-          {/* Property type pills */}
-          <Text style={styles.filterLabel}>Property Type</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterRow}
-          >
-            {PROPERTY_FILTERS.map((f) => (
-              <TouchableOpacity
-                key={f}
-                style={[styles.filterPill, propertyFilter === f && styles.filterPillActive]}
-                onPress={() => setPropertyFilter(f)}
-              >
-                <Text
-                  style={[styles.filterPillText, propertyFilter === f && styles.filterPillTextActive]}
-                >
-                  {f}
-                </Text>
+      {/* Filter bottom sheet */}
+      <Modal
+        visible={showFilters}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowFilters(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <TouchableOpacity
+            style={styles.modalBackdropTouch}
+            activeOpacity={1}
+            onPress={() => setShowFilters(false)}
+          />
+          <View style={styles.filterSheet}>
+            <View style={styles.filterSheetHandle} />
+            <View style={styles.filterSheetHeader}>
+              <Text style={styles.filterSheetTitle}>Filters</Text>
+              <TouchableOpacity onPress={resetFilters}>
+                <Text style={styles.filterSheetReset}>Reset</Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
+            </View>
 
-          {/* Price range pills */}
-          <Text style={styles.filterLabel}>Price Range</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterRow}
-          >
-            {PRICE_FILTERS.map((f) => (
-              <TouchableOpacity
-                key={f}
-                style={[styles.filterPill, priceFilter === f && styles.filterPillActive]}
-                onPress={() => setPriceFilter(f)}
-              >
-                <Text
-                  style={[styles.filterPillText, priceFilter === f && styles.filterPillTextActive]}
-                >
-                  {f}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.filterSheetScroll}>
+              <Text style={styles.filterLabel}>Property Type</Text>
+              <View style={styles.chipWrap}>
+                {PROPERTY_FILTERS.map((f) => (
+                  <TouchableOpacity
+                    key={f}
+                    style={[styles.filterPill, propertyFilter === f && styles.filterPillActive]}
+                    onPress={() => setPropertyFilter(f)}
+                  >
+                    <Text
+                      style={[styles.filterPillText, propertyFilter === f && styles.filterPillTextActive]}
+                    >
+                      {f}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-          {/* Sort options */}
-          <Text style={styles.filterLabel}>Sort By</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterRow}
-          >
-            {SORT_OPTIONS.map((s) => (
-              <TouchableOpacity
-                key={s}
-                style={[styles.filterPill, sortOption === s && styles.filterPillActive]}
-                onPress={() => setSortOption(s)}
-              >
-                <Text
-                  style={[styles.filterPillText, sortOption === s && styles.filterPillTextActive]}
-                >
-                  {s}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+              <Text style={styles.filterLabel}>Price Range</Text>
+              <View style={styles.chipWrap}>
+                {PRICE_FILTERS.map((f) => (
+                  <TouchableOpacity
+                    key={f}
+                    style={[styles.filterPill, priceFilter === f && styles.filterPillActive]}
+                    onPress={() => setPriceFilter(f)}
+                  >
+                    <Text
+                      style={[styles.filterPillText, priceFilter === f && styles.filterPillTextActive]}
+                    >
+                      {f}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.filterLabel}>Bedrooms</Text>
+              <View style={styles.chipWrap}>
+                {BEDS_FILTERS.map((n) => (
+                  <TouchableOpacity
+                    key={`bed-${n}`}
+                    style={[styles.filterPill, minBeds === n && styles.filterPillActive]}
+                    onPress={() => setMinBeds(n)}
+                  >
+                    <Text style={[styles.filterPillText, minBeds === n && styles.filterPillTextActive]}>
+                      {n === 0 ? 'Any' : `${n}+`}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.filterLabel}>Bathrooms</Text>
+              <View style={styles.chipWrap}>
+                {BATHS_FILTERS.map((n) => (
+                  <TouchableOpacity
+                    key={`bath-${n}`}
+                    style={[styles.filterPill, minBaths === n && styles.filterPillActive]}
+                    onPress={() => setMinBaths(n)}
+                  >
+                    <Text style={[styles.filterPillText, minBaths === n && styles.filterPillTextActive]}>
+                      {n === 0 ? 'Any' : `${n}+`}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.filterLabel}>Sort By</Text>
+              <View style={styles.chipWrap}>
+                {SORT_OPTIONS.map((s) => (
+                  <TouchableOpacity
+                    key={s}
+                    style={[styles.filterPill, sortOption === s && styles.filterPillActive]}
+                    onPress={() => setSortOption(s)}
+                  >
+                    <Text
+                      style={[styles.filterPillText, sortOption === s && styles.filterPillTextActive]}
+                    >
+                      {s}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.filterApplyButton}
+              activeOpacity={0.85}
+              onPress={() => setShowFilters(false)}
+            >
+              <Text style={styles.filterApplyText}>
+                Show {filtered.length} {filtered.length === 1 ? 'home' : 'homes'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      )}
+      </Modal>
 
       {/* Active filter tags */}
-      {(propertyFilter !== 'All' || priceFilter !== 'Any' || sortOption !== 'Newest') && (
+      {(activeFilterCount > 0 || sortOption !== 'Newest') && (
         <View style={styles.activeFiltersRow}>
           {propertyFilter !== 'All' && (
             <TouchableOpacity style={styles.activeTag} onPress={() => setPropertyFilter('All')}>
@@ -450,12 +530,22 @@ export default function MarketplaceScreen() {
               <Text style={styles.activeTagText}>{priceFilter} ✕</Text>
             </TouchableOpacity>
           )}
+          {minBeds > 0 && (
+            <TouchableOpacity style={styles.activeTag} onPress={() => setMinBeds(0)}>
+              <Text style={styles.activeTagText}>{minBeds}+ Beds ✕</Text>
+            </TouchableOpacity>
+          )}
+          {minBaths > 0 && (
+            <TouchableOpacity style={styles.activeTag} onPress={() => setMinBaths(0)}>
+              <Text style={styles.activeTagText}>{minBaths}+ Baths ✕</Text>
+            </TouchableOpacity>
+          )}
           {sortOption !== 'Newest' && (
             <TouchableOpacity style={styles.activeTag} onPress={() => setSortOption('Newest')}>
               <Text style={styles.activeTagText}>{sortOption} ✕</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={() => { setPropertyFilter('All'); setPriceFilter('Any'); setSortOption('Newest'); }}>
+          <TouchableOpacity onPress={resetFilters}>
             <Text style={styles.clearAllText}>Clear all</Text>
           </TouchableOpacity>
         </View>
@@ -583,13 +673,66 @@ const styles = StyleSheet.create({
   },
 
   // Filters
-  filtersContainer: {
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(28, 28, 40, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalBackdropTouch: {
+    flex: 1,
+  },
+  filterSheet: {
     backgroundColor: colors.white,
-    marginHorizontal: spacing.lg,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+    maxHeight: '80%',
+  },
+  filterSheetHandle: {
+    alignSelf: 'center',
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.border,
+    marginTop: spacing.sm,
     marginBottom: spacing.sm,
-    ...shadows.sm,
+  },
+  filterSheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  filterSheetTitle: {
+    ...typography.h2,
+    color: colors.textPrimary,
+  },
+  filterSheetReset: {
+    ...typography.bodyBold,
+    color: colors.primaryLight,
+  },
+  filterSheetScroll: {
+    flexGrow: 0,
+  },
+  chipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  filterApplyButton: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: borderRadius.lg,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: spacing.md,
+    ...shadows.md,
+  },
+  filterApplyText: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: '700',
   },
   filterLabel: {
     ...typography.smallBold,

@@ -33,6 +33,7 @@ import {
   PROPERTY_TYPES,
 } from "../shared";
 import { uploadPhoto } from "../lib/uploadImage";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { colors, shadows, spacing, borderRadius, typography } from "../theme";
 import AddressAutocomplete from "../components/AddressAutocomplete";
 import { supabase } from "../lib/supabase";
@@ -289,6 +290,13 @@ export default function PricingScreen() {
 
       if (!res.ok) throw new Error("Failed to get pricing");
       const result = await res.json();
+
+      // Persist the full input so Create Listing can prefill everything,
+      // including property type and already-uploaded photos.
+      AsyncStorage.setItem("chiavi:lastPricingInput", JSON.stringify(input)).catch(
+        () => {}
+      );
+
       navigation.navigate("PricingResults", { input, result });
     } catch {
       setErrorMessage(
@@ -666,22 +674,36 @@ export default function PricingScreen() {
             <View style={styles.inputWrapper}>
               <TextInput
                 style={styles.input}
-                value={appraisalValue}
-                onChangeText={setAppraisalValue}
-                placeholder="e.g. 1200000"
+                value={appraisalValue ? `$${Number(appraisalValue).toLocaleString("en-US")}` : ""}
+                onChangeText={(text) => {
+                  const digits = text.replace(/[^0-9]/g, "");
+                  setAppraisalValue(digits);
+                }}
+                placeholder="$1,200,000"
                 placeholderTextColor={colors.textMuted}
-                keyboardType="numeric"
+                keyboardType="number-pad"
               />
             </View>
-            <Text style={styles.label}>Appraisal Date (YYYY-MM-DD)</Text>
+            <Text style={styles.label}>Appraisal Date (MM/DD/YYYY)</Text>
             <View style={styles.inputWrapper}>
               <TextInput
                 style={styles.input}
                 value={appraisalDate}
-                onChangeText={setAppraisalDate}
-                placeholder="e.g. 2025-11-15"
+                onChangeText={(text) => {
+                  // Auto-insert slashes as the user types digits
+                  const digits = text.replace(/[^0-9]/g, "").slice(0, 8);
+                  let formatted = digits;
+                  if (digits.length > 4) {
+                    formatted = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+                  } else if (digits.length > 2) {
+                    formatted = `${digits.slice(0, 2)}/${digits.slice(2)}`;
+                  }
+                  setAppraisalDate(formatted);
+                }}
+                placeholder="11/15/2025"
                 placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
+                keyboardType="number-pad"
+                maxLength={10}
               />
             </View>
           </View>

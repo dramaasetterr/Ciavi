@@ -46,16 +46,12 @@ export default function ContactSellerScreen() {
   const [loadingListing, setLoadingListing] = useState(true);
 
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
 
-  // Pre-fill user info
+  // Sender identity comes from the logged-in profile — no form fields needed.
   useEffect(() => {
-    if (user?.email) setEmail(user.email);
-
     (async () => {
       if (user) {
         const { data: profile } = await supabase
@@ -92,14 +88,6 @@ export default function ContactSellerScreen() {
   const handleSend = async () => {
     setError("");
 
-    if (!name.trim()) {
-      setError("Please enter your name.");
-      return;
-    }
-    if (!email.trim()) {
-      setError("Please enter your email address.");
-      return;
-    }
     if (!message.trim()) {
       setError("Please enter a message.");
       return;
@@ -108,24 +96,34 @@ export default function ContactSellerScreen() {
       setError("Listing not found.");
       return;
     }
+    if (!user) {
+      setError("Please log in to message the seller.");
+      return;
+    }
 
     setSending(true);
 
     try {
       const { error: insertError } = await supabase.from("messages").insert({
         listing_id: listingId,
-        sender_id: user?.id || null,
+        sender_id: user.id,
         receiver_id: listing.user_id,
         content: message.trim(),
-        sender_name: name.trim(),
-        sender_email: email.trim(),
+        sender_name: name.trim() || user.email || "Chiavi user",
+        sender_email: user.email || "",
         read: false,
       });
 
       if (insertError) {
         setError("Could not send your message. Please check your connection and try again.");
       } else {
-        setSent(true);
+        // Drop the buyer straight into the conversation thread — all further
+        // back-and-forth lives in Messages.
+        navigation.replace("Conversation", {
+          listingId,
+          otherPartyId: listing.user_id,
+          otherPartyName: "Seller",
+        });
       }
     } catch (err: any) {
       setError("Could not send your message. Please check your connection and try again.");
@@ -168,33 +166,7 @@ export default function ContactSellerScreen() {
             <View style={styles.headerSpacer} />
           </View>
 
-          {sent ? (
-            /* Success state */
-            <View style={styles.successContainer}>
-              <View style={styles.successCard}>
-                <Text style={styles.successIcon}>{"\u2705"}</Text>
-                <Text style={styles.successTitle}>Message sent!</Text>
-                <Text style={styles.successBody}>
-                  The seller will be notified and can respond to your message. You can view the
-                  conversation in your Messages.
-                </Text>
-                <TouchableOpacity
-                  style={styles.successButton}
-                  activeOpacity={0.8}
-                  onPress={() => navigation.goBack()}
-                >
-                  <Text style={styles.successButtonText}>Back to Listing</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.successSecondaryButton}
-                  activeOpacity={0.7}
-                  onPress={() => navigation.navigate("Messages")}
-                >
-                  <Text style={styles.successSecondaryText}>View Messages</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
+          {(
             <>
               {/* Listing Reference Card */}
               {listing && (
@@ -225,32 +197,6 @@ export default function ContactSellerScreen() {
                 ) : null}
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Your Name</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="John Doe"
-                    placeholderTextColor={colors.textMuted}
-                    value={name}
-                    onChangeText={setName}
-                    autoCapitalize="words"
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Your Email</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="you@example.com"
-                    placeholderTextColor={colors.textMuted}
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
                   <Text style={styles.label}>Message</Text>
                   <TextInput
                     style={[styles.input, styles.messageInput]}
@@ -264,6 +210,11 @@ export default function ContactSellerScreen() {
                     maxLength={2000}
                   />
                 </View>
+
+                <Text style={styles.inAppNote}>
+                  Messages stay inside Chiavi — the seller replies right here in
+                  the app, and you'll find the whole conversation in Messages.
+                </Text>
 
                 <TouchableOpacity
                   style={[styles.sendButton, sending && styles.sendButtonDisabled]}
@@ -403,6 +354,11 @@ const styles = StyleSheet.create({
   messageInput: {
     minHeight: 140,
     paddingTop: spacing.md,
+  },
+  inAppNote: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
 
   // Error

@@ -27,7 +27,7 @@ import { supabase } from "../lib/supabase";
 import { uploadPhoto } from "../lib/uploadImage";
 import { colors, shadows, spacing, borderRadius, typography } from "../theme";
 import AddressAutocomplete from "../components/AddressAutocomplete";
-import { useTierAccess } from "../hooks/useTierAccess";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
 const SCREEN_WIDTH = Dimensions.get("window").width;
@@ -41,8 +41,9 @@ const STEPS = ["Details", "Photos", "Description", "Review"];
 
 export default function ListingBuilderScreen({ navigation }: Props) {
   const { user } = useAuth();
-  const { plan } = useTierAccess();
-  const maxPhotos = plan === 'free' ? 5 : plan === 'seller_pro' ? 25 : 25;
+  // Technical ceiling only — listings should carry as many photos as the
+  // seller wants; 50 keeps uploads and detail pages sane.
+  const maxPhotos = 50;
   const [step, setStep] = useState(0);
 
   // Step 1 — Property Details
@@ -57,9 +58,12 @@ export default function ListingBuilderScreen({ navigation }: Props) {
   const [condition, setCondition] = useState("");
   const [selectedPrice, setSelectedPrice] = useState<number | null>(null);
   const [prefilled, setPrefilled] = useState(false);
+  const [pricingFeatures, setPricingFeatures] = useState("");
 
-  // Step 2 — Photos
-  const [photos, setPhotos] = useState<ImagePicker.ImagePickerAsset[]>([]);
+  // Step 2 — Photos. Items carry a local uri and, once uploaded (or when
+  // prefilled from the pricing flow), a remote public URL.
+  type PhotoItem = { uri: string; remoteUrl?: string };
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -73,11 +77,65 @@ export default function ListingBuilderScreen({ navigation }: Props) {
   // Step 4 — Publish
   const [publishing, setPublishing] = useState(false);
 
-  // Pre-fill from pricing data
+  // Pre-fill from pricing data. The locally saved pricing input has the full
+  // picture (property type, uploaded photos); the pricing_results row is the
+  // fallback for the basics.
   useEffect(() => {
     if (prefilled || !user) return;
     (async () => {
       try {
+        const stored = await AsyncStorage.getItem("chiavi:lastPricingInput");
+        if (stored) {
+          const p = JSON.parse(stored);
+          if (p.address) setAddress(p.address);
+          if (p.bedrooms) setBedrooms(String(p.bedrooms));
+          if (p.bathrooms) setBathrooms(String(p.bathrooms));
+          if (p.sqft) setSqft(String(p.sqft));
+          if (p.year_built) setYearBuilt(String(p.year_built));
+          if (p.condition) setCondition(p.condition);
+          if (p.property_type && PROPERTY_TYPES.includes(p.property_type)) {
+            setPropertyType(p.property_type);
+          }
+          if (Array.isArray(p.photos) && p.photos.length > 0) {
+            const items = p.photos
+              .filter((u: unknown) => typeof u === "string")
+              .map((u: string) => ({ uri: u, remoteUrl: u }));
+            setPhotos(items);
+            setPhotoUrls(items.map((i: { remoteUrl: string }) => i.remoteUrl));
+          }
+
+          // Collect every feature captured during pricing so the description
+          // generator can name them specifically.
+          const featureBits: string[] = [];
+          const label = (s: string) => s.replace(/_/g, " ");
+          if (Array.isArray(p.premium_finishes) && p.premium_finishes.length) {
+            featureBits.push(...p.premium_finishes.map(label));
+          }
+          if (Array.isArray(p.outdoor_features) && p.outdoor_features.length) {
+            featureBits.push(...p.outdoor_features.map(label));
+          }
+          if (p.pool_type && p.pool_type !== "none") {
+            const poolFeat = Array.isArray(p.pool_features) && p.pool_features.length
+              ? ` (${p.pool_features.map(label).join(", ")})`
+              : "";
+            featureBits.push(`${label(p.pool_type)} pool${poolFeat}`);
+            if (p.pool_has_spa) featureBits.push("attached spa/hot tub");
+          }
+          if (p.lot_size_sqft) {
+            featureBits.push(`${(p.lot_size_sqft / 43560).toFixed(2)} acre lot`);
+          }
+          if (p.garage_spaces) featureBits.push(`${p.garage_spaces}-car garage`);
+          if (p.finished_basement_sqft) {
+            featureBits.push(
+              `${Number(p.finished_basement_sqft).toLocaleString()} sqft finished basement${p.basement_is_adu ? " (full ADU)" : ""}`
+            );
+          }
+          if (typeof p.features === "string" && p.features.trim()) {
+            featureBits.push(p.features.trim());
+          }
+          if (featureBits.length) setPricingFeatures(featureBits.join(", "));
+        }
+
         const { data } = await supabase
           .from("pricing_results")
           .select("*")
@@ -87,12 +145,12 @@ export default function ListingBuilderScreen({ navigation }: Props) {
           .single();
 
         if (data) {
-          setAddress(data.address || "");
-          setBedrooms(String(data.bedrooms || ""));
-          setBathrooms(String(data.bathrooms || ""));
-          setSqft(String(data.sqft || ""));
-          setYearBuilt(String(data.year_built || ""));
-          if (data.condition) setCondition(data.condition);
+          if (data.address) setAddress((prev) => prev || data.address);
+          if (data.bedrooms) setBedrooms((prev) => prev || String(data.bedrooms));
+          if (data.bathrooms) setBathrooms((prev) => prev || String(data.bathrooms));
+          if (data.sqft) setSqft((prev) => prev || String(data.sqft));
+          if (data.year_built) setYearBuilt((prev) => prev || String(data.year_built));
+          if (data.condition) setCondition((prev) => prev || data.condition);
           if (data.selected_price) setSelectedPrice(data.selected_price);
         }
       } catch (err) {
@@ -121,6 +179,7 @@ export default function ListingBuilderScreen({ navigation }: Props) {
           hoa,
           condition: condition || undefined,
           selected_price: selectedPrice || undefined,
+          features: pricingFeatures || undefined,
         }),
       });
       if (!res.ok) throw new Error("Failed to generate description");
@@ -132,7 +191,7 @@ export default function ListingBuilderScreen({ navigation }: Props) {
     } finally {
       setGeneratingDesc(false);
     }
-  }, [address, bedrooms, bathrooms, sqft, yearBuilt, propertyType, hoa, condition, selectedPrice, description]);
+  }, [address, bedrooms, bathrooms, sqft, yearBuilt, propertyType, hoa, condition, selectedPrice, description, pricingFeatures]);
 
   const getOrderedPhotos = () => {
     if (photos.length === 0) return photos;
@@ -164,10 +223,18 @@ export default function ListingBuilderScreen({ navigation }: Props) {
 
     for (let i = 0; i < orderedPhotos.length; i++) {
       const photo = orderedPhotos[i];
-      const fileName = `${user.id}/${Date.now()}_${i}.jpg`;
 
+      // Already uploaded (prefilled from pricing flow) — reuse the URL.
+      if (photo.remoteUrl) {
+        urls.push(photo.remoteUrl);
+        setUploadProgress(Math.round(((i + 1) / orderedPhotos.length) * 100));
+        continue;
+      }
+
+      const fileName = `${user.id}/${Date.now()}_${i}.jpg`;
       try {
         const publicUrl = await uploadPhoto("listing-photos", fileName, photo.uri);
+        photo.remoteUrl = publicUrl;
         urls.push(publicUrl);
       } catch {
         failedCount++;
@@ -200,7 +267,8 @@ export default function ListingBuilderScreen({ navigation }: Props) {
     });
 
     if (!result.canceled && result.assets) {
-      setPhotos((prev) => [...prev, ...result.assets].slice(0, maxPhotos));
+      const newItems = result.assets.map((a) => ({ uri: a.uri }));
+      setPhotos((prev) => [...prev, ...newItems].slice(0, maxPhotos));
     }
   };
 
@@ -229,7 +297,7 @@ export default function ListingBuilderScreen({ navigation }: Props) {
       }
       setStep(1);
     } else if (step === 1) {
-      if (photos.length > 0 && photoUrls.length === 0) {
+      if (photos.some((p) => !p.remoteUrl)) {
         await uploadPhotos();
       }
       setStep(2);
@@ -252,7 +320,47 @@ export default function ListingBuilderScreen({ navigation }: Props) {
     }
   };
 
+  const savePhoneAndPublish = async (phone: string) => {
+    if (!user) return;
+    const trimmed = phone.trim();
+    if (!/^[\d\s()+.-]{7,}$/.test(trimmed)) {
+      Alert.alert("Invalid Phone", "Please enter a valid phone number.");
+      return;
+    }
+    await supabase.from("profiles").update({ phone: trimmed }).eq("id", user.id);
+    await doPublish();
+  };
+
   const handlePublish = async () => {
+    if (!user) return;
+
+    // FSBO buyers need to be able to reach the seller — a phone number is
+    // required before a listing can go live.
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("phone")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile?.phone) {
+      Alert.prompt(
+        "Add Your Phone Number",
+        "Buyers need a way to call you about your listing. Your number is shown to interested buyers.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Save & Publish", onPress: (phone) => savePhoneAndPublish(phone || "") },
+        ],
+        "plain-text",
+        "",
+        "phone-pad"
+      );
+      return;
+    }
+
+    await doPublish();
+  };
+
+  const doPublish = async () => {
     if (!user) return;
     setPublishing(true);
     try {
@@ -1057,10 +1165,14 @@ const styles = StyleSheet.create({
   reviewLabel: {
     ...typography.caption,
     color: colors.textSecondary,
+    marginRight: spacing.md,
   },
   reviewValue: {
     ...typography.captionBold,
     color: colors.textPrimary,
+    flex: 1,
+    textAlign: "right",
+    flexWrap: "wrap",
   },
   reviewDescSection: {
     marginBottom: spacing.md,

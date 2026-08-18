@@ -21,6 +21,15 @@ import type { AppStackParamList } from '../../App';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { colors, shadows, spacing, borderRadius, typography } from '../theme';
+import { PROPERTY_TYPE_LABELS } from '../shared';
+
+const formatPropertyType = (raw: string | null | undefined): string => {
+  if (!raw) return 'N/A';
+  return (
+    (PROPERTY_TYPE_LABELS as Record<string, string>)[raw] ??
+    raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -272,20 +281,44 @@ export default function ListingDetailScreen() {
           <Text style={styles.sectionTitle}>Property Details</Text>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Type</Text>
-            <Text style={styles.detailValue}>{listing.property_type || 'N/A'}</Text>
+            <Text style={styles.detailValue}>{formatPropertyType(listing.property_type)}</Text>
           </View>
-          {listing.hoa_fee != null && (
+          {listing.year_built != null && (
             <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>HOA Fee</Text>
-              <Text style={styles.detailValue}>${listing.hoa_fee}/mo</Text>
+              <Text style={styles.detailLabel}>Year Built</Text>
+              <Text style={styles.detailValue}>{listing.year_built}</Text>
             </View>
           )}
+          {listing.sqft != null && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Square Feet</Text>
+              <Text style={styles.detailValue}>{listing.sqft.toLocaleString()}</Text>
+            </View>
+          )}
+          {listing.price != null && listing.sqft ? (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Price per Sqft</Text>
+              <Text style={styles.detailValue}>
+                ${Math.round(listing.price / listing.sqft).toLocaleString()}
+              </Text>
+            </View>
+          ) : null}
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>HOA</Text>
+            <Text style={styles.detailValue}>
+              {listing.hoa_fee != null ? `$${listing.hoa_fee}/mo` : 'None'}
+            </Text>
+          </View>
           {listing.lot_size != null && (
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Lot Size</Text>
               <Text style={styles.detailValue}>{listing.lot_size}</Text>
             </View>
           )}
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Sale Type</Text>
+            <Text style={styles.detailValue}>For Sale By Owner</Text>
+          </View>
         </View>
 
         {/* Action buttons */}
